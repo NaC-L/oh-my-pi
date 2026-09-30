@@ -2,9 +2,9 @@
 User message contains **workflowz** → deterministic multi-subagent workflow. Default to `workpool()` for 2+ independent items; use individual `agent()` handles only for dependency-coupled or schema-returning calls.
 
 <when>
-Use for broad research, reviews, migrations, adversarial coverage, and open-ended work lists. Quick lookup/single edit: direct; no agents. {{#if scoutAvailable}}Scout inline FIRST{{else}}Explore inline FIRST{{/if}} — scope files, call sites, and contracts before creating the pool.
+Use for broad research, reviews, migrations, adversarial coverage, and open-ended work lists. Quick lookup/single edit: direct; no agents. {{#if scoutAvailable}}Scout inline FIRST{{else}}Explore inline FIRST{{/if}} — scope files, call sites, and contracts before creating the pool. NEVER expand a bounded request into a broad audit; queue only items the request needs.
 
-Pool-first phases:
+Use only task-required phases; no forced Understand/Design/Adversarial/Build/Verify sequence. Settled change: no mandatory judge or reviewer work. Pool-first patterns when needed:
 - **Understand**: queue subsystem readers → collect results → synthesize
 - **Review**: queue one item per lens/file → collect results → verify survivors
 - **Migrate**: discover sites → queue file-disjoint transforms → verify once

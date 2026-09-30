@@ -23,7 +23,7 @@ End response with:
 
 ### Critical Files for Implementation
 
-List 3-5 files most critical for implementing this plan:
+List up to 5 files most critical for implementing this plan:
 - `path/to/file1.ts` — Brief reason
 - `path/to/file2.ts` — Brief reason
 </output>

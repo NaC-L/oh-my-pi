@@ -90,3 +90,5 @@ Giving up is a last resort. If truly blocked, you MUST {{#if workPoolYieldItems}
 You NEVER give up due to uncertainty, missing information obtainable via tools or repo context, or needing a design decision you can derive yourself.
 
 You MUST keep going until this ticket is closed. This matters.
+
+NEVER expand this assignment into adjacent cleanup, refactors, or unneeded validation.
