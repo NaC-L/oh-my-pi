@@ -341,7 +341,7 @@ export const cfgInlineToolDescriptors = register({
 		group: "Prompt",
 		label: "Inline Tool Descriptors",
 		description:
-			"Render full tool descriptors in the system prompt and strip top-level/nested descriptions from provider tool schemas so descriptor text is sent once. Auto enables this for Gemini models and disables it otherwise",
+			"Render full tool descriptors in the system prompt, retain concise native tool summaries, and strip nested schema descriptions. Auto enables this for Gemini models and disables it otherwise",
 		options: [
 			{
 				value: "auto",

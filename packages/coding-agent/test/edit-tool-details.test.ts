@@ -123,6 +123,74 @@ describe("EditTool details", () => {
 		expect(details.perFileResults?.[1]?.diff).toContain("+1|B");
 	});
 
+	test("compacts previously seen context without losing reusable changed anchors or unseen-line guards", async () => {
+		const session = makeSession(tempDir);
+		const absolute = path.join(tempDir, "context.txt");
+		const before = "alpha\nbeta\ngamma\nold\nfive\nsix\nseven\neight\nnine\nten\neleven\n";
+		await Bun.write(absolute, before);
+		const oldTag = getEditStore(session).recordSnapshot(absolute, before, [1, 2, 3, 4]);
+		const tool = new EditTool(session, "hashline");
+		const result = await tool.execute("compact-context", {
+			input: `[context.txt#${oldTag}]\nPUT 4.=4:\n+new`,
+		});
+		expect(result.isError).not.toBe(true);
+		const text = result.content
+			.filter(part => part.type === "text")
+			.map(part => part.text)
+			.join("\n");
+		const header = text.split("\n")[0]!;
+		expect(header).toMatch(/^\[context\.txt#[0-9A-F]{4}\]$/);
+		expect(header).not.toBe(`[context.txt#${oldTag}]`);
+		expect(text).not.toContain("2:beta");
+		expect(text).toContain("…");
+		expect(text).toContain("3:gamma");
+		expect(text).toContain("4:new");
+		// The model omits known beta context, but the TUI still receives it.
+		expect((result.details as EditToolDetails).diff).toContain(" 2|beta");
+		expect((result.details as EditToolDetails).newText).toBe(before.replace("old", "new"));
+
+		const second = await tool.execute("reuse-changed-anchor", { input: `${header}\nPUT 4.=4:\n+newer` });
+		expect(second.isError).not.toBe(true);
+		const secondText = second.content
+			.filter(part => part.type === "text")
+			.map(part => part.text)
+			.join("\n");
+		const unseen = await tool.execute("reject-unseen-anchor", {
+			input: `${secondText.split("\n")[0]}\nPUT 10.=10:\n+changed`,
+		});
+		expect(unseen.isError).toBe(true);
+		expect(
+			unseen.content
+				.filter(part => part.type === "text")
+				.map(part => part.text)
+				.join("\n"),
+		).toContain("never displayed");
+		expect(await Bun.file(absolute).text()).toBe(before.replace("old", "newer"));
+	});
+
+	test("keeps newly revealed context visible so it can be used with the fresh tag", async () => {
+		const session = makeSession(tempDir);
+		const absolute = path.join(tempDir, "unseen-context.txt");
+		const before = "alpha\nbeta\ngamma\nold\nomega\n";
+		await Bun.write(absolute, before);
+		const tag = getEditStore(session).recordSnapshot(absolute, before, [4]);
+		const tool = new EditTool(session, "hashline");
+		const result = await tool.execute("reveal-context", {
+			input: `[unseen-context.txt#${tag}]\nPUT 4.=4:\n+new`,
+		});
+		expect(result.isError).not.toBe(true);
+		const text = result.content
+			.filter(part => part.type === "text")
+			.map(part => part.text)
+			.join("\n");
+		expect(text).toContain("2:beta");
+		const second = await tool.execute("use-revealed-context", {
+			input: `${text.split("\n")[0]}\nPUT 2.=2:\n+BETA`,
+		});
+		expect(second.isError).not.toBe(true);
+		expect(await Bun.file(absolute).text()).toBe("alpha\nBETA\ngamma\nnew\nomega\n");
+	});
+
 	test("preserves diff metadata while native snapshot pruning removes oversized texts", async () => {
 		const before = `${"line\n".repeat(9_000)}old\n`;
 		await Bun.write(path.join(tempDir, "large.txt"), before);

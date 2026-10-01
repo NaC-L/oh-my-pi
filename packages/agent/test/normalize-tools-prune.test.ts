@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "@oh-my-pi/omptype";
 import { normalizeTools } from "@oh-my-pi/pi-agent-core/agent-loop";
-import type { AgentTool } from "@oh-my-pi/pi-agent-core/types";
+import { AppendOnlyContextManager } from "@oh-my-pi/pi-agent-core/append-only-context";
+import type { AgentContext, AgentTool } from "@oh-my-pi/pi-agent-core/types";
+import type { Context } from "@oh-my-pi/pi-ai";
+import { renderToolInventory } from "@oh-my-pi/pi-ai/dialect/inventory";
+import { buildParams } from "@oh-my-pi/pi-ai/providers/openai-responses";
+import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
 
 const toolSchema = type({
@@ -43,23 +48,77 @@ function fieldDescription(parameters: unknown, field: string): unknown {
 	return undefined;
 }
 
-describe("normalizeTools — pruneDescriptions", () => {
-	it("keeps the top-level description when pruning is off", () => {
-		const tools = normalizeTools([makeTool()], { injectIntent: false });
-		expect(tools?.[0]?.description).toBe("top-level tool description");
-	});
+function providerTool(tools: Context["tools"]) {
+	const model = getBundledModel<"openai-responses">("openai", "gpt-5-mini");
+	if (!model) throw new Error("Expected bundled OpenAI GPT-5 Mini model");
+	const { params } = buildParams(
+		model,
+		{ messages: [{ role: "user", content: "Read the file", timestamp: 0 }], tools },
+		undefined,
+		undefined,
+	);
+	const tool = params.tools?.[0];
+	if (tool?.type !== "function") throw new Error("Expected a provider function tool");
+	return tool;
+}
 
-	it("empties the description and strips nested schema descriptions when pruning", () => {
-		const tools = normalizeTools([makeTool()], { injectIntent: false, pruneDescriptions: true });
-		const tool = tools?.[0];
-		expect(tool?.description).toBe("");
+describe("normalizeTools — pruneDescriptions", () => {
+	it("retains a concise native description without duplicating catalog details or schema annotations", () => {
+		const source = makeTool();
+		source.summary = "  Read a file safely.\nLong summary detail.";
+		source.description = "Read a file.\n\nFull catalog instructions.";
+		source.examples = [{ caption: "Catalog-only example", call: { path: "demo.txt", nested: { inner: "value" } } }];
+		const catalog = renderToolInventory([source]);
+		const tools = normalizeTools([source], { injectIntent: true, pruneDescriptions: true });
+		const tool = providerTool(tools);
+		expect(tool.description).toBe("Read a file safely.");
+		expect(JSON.stringify(tool)).not.toContain("Full catalog instructions");
+		expect(JSON.stringify(tool)).not.toContain("Catalog-only example");
+		expect(catalog).toContain("Full catalog instructions");
+		expect(catalog).toContain("Catalog-only example");
+		expect(catalog).toContain("where to read");
 		const wire = JSON.stringify(tool?.parameters);
 		expect(wire).not.toContain("where to read");
 		expect(wire).not.toContain("inner value");
 		expect(wire).not.toContain("a nested object");
 		// Structure is preserved.
-		expect(hasField(tool?.parameters, "path")).toBe(true);
-		expect(hasField(tool?.parameters, "nested")).toBe(true);
+		expect(hasField(tool.parameters, "path")).toBe(true);
+		expect(hasField(tool.parameters, "nested")).toBe(true);
+		expect(hasField(tool.parameters, INTENT_FIELD)).toBe(true);
+		expect(tool.parameters?.required).toContain(INTENT_FIELD);
+		expect(fieldDescription(tool.parameters, INTENT_FIELD)).toBeUndefined();
+	});
+
+	it("falls back to the first nonblank description line for tools without a summary", () => {
+		const source = makeTool();
+		source.description = "\n \nRead files.\r\n\nDetailed extension guidance.";
+		const pruned = providerTool(normalizeTools([source], { injectIntent: false, pruneDescriptions: true }));
+		expect(pruned.description).toBe("Read files.");
+		expect(JSON.stringify(pruned.parameters)).not.toContain("where to read");
+
+		const full = providerTool(normalizeTools([source], { injectIntent: false }));
+		expect(full.description).toContain("Detailed extension guidance");
+		expect(JSON.stringify(full.parameters)).toContain("where to read");
+	});
+
+	it("refreshes the provider description when a live summary changes under an append-only prefix", () => {
+		let summary = "Read files.";
+		const source: AgentTool<typeof toolSchema, { path: string }> = {
+			...makeTool(),
+			get summary() {
+				return summary;
+			},
+		};
+		const context: AgentContext = { systemPrompt: [renderToolInventory([source])], messages: [], tools: [source] };
+		const manager = new AppendOnlyContextManager();
+		const options = { intentTracing: true, pruneToolDescriptions: true };
+		const first = manager.build(context, options);
+		expect(providerTool(first.tools).description).toBe("Read files.");
+
+		summary = "Read files with snapshot anchors.";
+		const updated = manager.build(context, options);
+		expect(providerTool(updated.tools).description).toBe("Read files with snapshot anchors.");
+		expect(updated.tools?.[0]?.parameters).toBe(first.tools?.[0]?.parameters);
 	});
 
 	it("reuses injected parameters by identity across calls so downstream schema memos hit", () => {

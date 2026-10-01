@@ -52,6 +52,7 @@ import { resolveEditMode } from "../utils/edit-mode";
 import { attemptEditAutoRepair, type EditAutoRepairOutcome } from "./auto-repair";
 import { type AppliedEditSnapshot, createEditBlackboxRecorder } from "./blackbox";
 import hashlineCompactPrompt from "./hashline-compact.md" with { type: "text" };
+import editSummary from "../prompts/tools/edit-summary.md" with { type: "text" };
 import { getLspBatchRequest } from "../lsp/batch";
 import { type EditToolDetails, type EditToolPerFileResult, type Operation } from "@oh-my-pi/pi-tui/tools/edit";
 import {
@@ -67,6 +68,7 @@ import {
 	type SloppyParams,
 	sloppyEditSchema,
 } from "./schemas";
+import { normalizeToLF, stripBom } from "./normalize";
 import { getEditStore } from "./store";
 
 import {
@@ -321,10 +323,66 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 	return true;
 }
 
+interface PriorEditContext {
+	tag: string;
+	seen: ReadonlySet<number>;
+}
+
+/** Only elide context already displayed at the same line in the previous snapshot. */
+function compactKnownEditContext(
+	file: EditFileOutcome,
+	prior: PriorEditContext | undefined,
+	session: ToolSession,
+): string {
+	if (
+		!prior ||
+		file.op !== "update" ||
+		file.moveTo ||
+		file.warnings.length > 0 ||
+		!file.firstChangedLine ||
+		file.oldText === undefined ||
+		file.newText === undefined
+	) {
+		return file.text;
+	}
+	const before = normalizeToLF(stripBom(file.oldText).text);
+	if (getEditStore(session).byHashText(file.path, prior.tag) !== before) return file.text;
+	const oldLines = before.split("\n");
+	const knownRows = new Set<string>();
+	let nearestContext: string | undefined;
+	for (const row of file.diff.split("\n")) {
+		const match = /^ (\d+)\|(.*)$/.exec(row);
+		if (!match) continue;
+		const line = Number(match[1]);
+		// Hashline materialization reports the minimum edited source anchor;
+		// rows before it cannot have changed content or shifted line numbers.
+		if (line >= file.firstChangedLine || match[2] !== oldLines[line - 1]) continue;
+		const numbered = `${line}:${match[2]}`;
+		nearestContext = numbered;
+		if (prior.seen.has(line)) knownRows.add(numbered);
+	}
+	if (nearestContext) knownRows.delete(nearestContext);
+	if (knownRows.size === 0) return file.text;
+	const rows: string[] = [];
+	let inWarnings = false;
+	for (const row of file.text.split("\n")) {
+		if (row === "Warnings:") inWarnings = true;
+		if (!inWarnings && knownRows.has(row)) {
+			if (rows.at(-1) !== "…") rows.push("…");
+		} else if (row !== "…" || rows.at(-1) !== "…") {
+			rows.push(row);
+		}
+	}
+	return rows.join("\n");
+}
+
 export class EditTool implements AgentTool<TInput> {
 	readonly name = "edit";
 	readonly label = "Edit";
 	readonly loadMode = "essential";
+	get summary(): string {
+		return prompt.render(editSummary, { hashline: this.mode === "hashline" });
+	}
 	readonly concurrency = "exclusive";
 	readonly strict = true;
 
@@ -488,6 +546,18 @@ export class EditTool implements AgentTool<TInput> {
 		}
 		const editSession = open.native;
 		const batch = getLspBatchRequest(context?.toolCall);
+		const priorContext = new Map<string, PriorEditContext>();
+		if (this.mode === "hashline") {
+			const store = getEditStore(this.session);
+			for (const target of this.#inspect(params).paths) {
+				if (extractUriScheme(target) !== undefined) continue;
+				const absolute = path.resolve(this.session.cwd, target);
+				const tag = store.headHash(absolute);
+				if (!tag) continue;
+				const seen = store.seenLines(absolute, tag);
+				if (seen?.length) priorContext.set(absolute, { tag, seen: new Set(seen) });
+			}
+		}
 		let outcome;
 		try {
 			outcome = await editSession.apply(
@@ -512,7 +582,18 @@ export class EditTool implements AgentTool<TInput> {
 
 		const details = aggregateDetails(outcome.files, this.mode);
 		const result: AgentToolResult<EditToolDetails, TInput> = {
-			content: [{ type: "text", text: outcome.text }],
+			content: [
+				{
+					type: "text",
+					text:
+						priorContext.size === 0
+							? outcome.text
+							: outcome.files
+									.map(file => compactKnownEditContext(file, priorContext.get(file.path), this.session))
+									.filter(Boolean)
+									.join("\n\n"),
+				},
+			],
 			...(details ? { details } : {}),
 		};
 		const record = createEditBlackboxRecorder(this.session, this.mode, params);

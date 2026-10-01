@@ -1,0 +1,1 @@
+Read files, directories, URLs, and internal resources. {{#if IS_HL_MODE}}Selected text includes snapshot anchors and line numbers for safe edits.{{else}}Select line ranges with path suffixes.{{/if}}

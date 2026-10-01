@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { hashlineFileHash } from "@oh-my-pi/pi-natives";
 import { resetSettingsForTest, Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { EditTool } from "@oh-my-pi/pi-coding-agent/edit";
+import { EditTool, getEditStore } from "@oh-my-pi/pi-coding-agent/edit";
 import { type EditToolDetails } from "@oh-my-pi/pi-tui/tools/edit";
 import { resolveLocalUrlToPath } from "@oh-my-pi/pi-coding-agent/internal-urls";
 import type { PlanModeState } from "@oh-my-pi/pi-coding-agent/plan-mode/state";
@@ -120,21 +120,26 @@ describe("EditTool ACP write routing", () => {
 
 	it("reports ACP formatting drift and returns the persisted bytes and tag", async () => {
 		const target = path.join(tmpDir, "drift.ts");
-		const original = "function f() {\n    return 1;\n}\n";
+		const original = "function f() {\n    // first\n    // second\n    return 1;\n}\n";
 		await Bun.write(target, original);
 		const { bridge } = makeBridge(true);
-		const input = `[drift.ts#${hashlineFileHash(original)}]\nPUT 2-2:\n+    return 2;`;
+		const session = createSession(tmpDir, { bridge });
+		const tag = getEditStore(session).recordSnapshot(target, original, [1, 2, 3, 4, 5]);
+		const input = `[drift.ts#${tag}]\nPUT 4.=4:\n+    return 2;`;
 
-		const result = await new EditTool(createSession(tmpDir, { bridge }), "hashline").execute("hashline", { input });
+		const result = await new EditTool(session, "hashline").execute("hashline", { input });
 		const persisted = await Bun.file(target).text();
 		const text = resultText(result);
 
 		expect(result.isError).not.toBe(true);
-		expect(persisted).toBe("function f() {\n\treturn 2;\n}\n");
+		expect(persisted).toBe("function f() {\n\t// first\n\t// second\n\treturn 2;\n}\n");
 		expect((result.details as EditToolDetails).newText).toBe(persisted);
 		expect(text).toContain("Warnings:");
 		expect(text).toMatch(/reformatted it on save/);
 		expect(text).toContain(`#${hashlineFileHash(persisted)}]`);
+		// Drift keeps the full preview, even when its leading context was seen.
+		expect(text).toContain("1:function f() {");
+		expect(text).toContain("2:    // first");
 	});
 
 	it("does not report drift for a byte-perfect hashline bridge write", async () => {

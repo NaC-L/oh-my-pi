@@ -2,7 +2,7 @@ import { classifyModel } from "@oh-my-pi/pi-catalog/identity";
 
 /**
  * Resolves whether full tool descriptors should be inlined into the system
- * prompt (and stripped from provider tool schemas) for a given model and
+ * prompt (with concise summaries retained in provider tool schemas) for a given model and
  * setting.
  *
  * `auto` enforces a per-model policy: inline for Gemini models, off otherwise.

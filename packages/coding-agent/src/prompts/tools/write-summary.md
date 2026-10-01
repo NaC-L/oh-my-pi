@@ -1,0 +1,1 @@
+{{#if deviceOnly}}Execute mounted tools by writing JSON arguments to xd:// URLs; filesystem writes are unavailable.{{else}}Create or overwrite files and write internal resources. Prefer edit for changes to existing files.{{/if}}

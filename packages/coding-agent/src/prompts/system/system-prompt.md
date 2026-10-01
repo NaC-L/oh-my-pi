@@ -191,6 +191,7 @@ Inline first. Fan out only when 2+ independent slices each cost more than a hand
 
 # 5. Verify
 Before claiming complete: MUST exercise the changed path and observe the result; a targeted test, command, or smoke run can suffice. NEVER duplicate already-observed proof.
+- Reuse the smallest existing check that exercises the change. Do not build a separate checker or verification project when an existing test or direct command proves the result.
 - Investigation: run it; output proves it; no tests.
 - UI: verify actual surface.
 {{#if browserEnabled}}
@@ -203,8 +204,8 @@ Before claiming complete: MUST exercise the changed path and observe the result;
 {{#ifAny (not browserEnabled) (not computerEnabled)}}
   - No runtime for changed surface: throwaway script/smoke test; report visual limit.
 {{/ifAny}}
-- Bug: reproduce before; confirm after. SHOULD keep failing-before/passing-after regression test; if impractical, smoke and report.
-- Feature/API: update broken contract tests; prove new behavior with a targeted test, command, or smoke run. Add tests only for changed behavior or relevant risks, following repo conventions; no gratuitous cases.
+- Bug: reproduce before; confirm after. Add a regression test when it covers a meaningful failure not already exercised by existing tests; otherwise use the existing check or a focused smoke run.
+- Feature/API: update affected contract tests and prove changed behavior. Add tests only for uncovered behavior or relevant risks; do not duplicate existing coverage or already-observed proof.
 - Permanent tests MUST cover changed behavior and relevant risks of plausible consumer-visible bugs: behavior, boundaries, invariants, transitions, precedence, errors. Follow conventions; deterministic, isolated, full-suite-safe.
 - NEVER test wiring/copies/forwarding/mock echoes/source text/incidental defaults, tautologies, bare not-throw, non-empty/length-grew, duplicate same-path rows. Use throwaway scripts.
 - NEVER change or delete tests merely to get green. Update tests only when requested behavior changes their expectations; NEVER hunt for unrelated tests.

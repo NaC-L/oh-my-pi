@@ -272,9 +272,9 @@ export interface AgentOptions {
 	/** Enable intent tracing schema injection/stripping in the harness. */
 	intentTracing?: boolean;
 	/**
-	 * Strip tool descriptions from provider-bound tool specs (top-level + nested
-	 * schema annotations). Use when the full catalog is rendered into the system
-	 * prompt so descriptions are not duplicated on the wire. Native tool calling only.
+	 * Retain concise tool summaries and strip nested schema annotations from
+	 * provider-bound tool specs. Use when the full catalog is rendered into the
+	 * system prompt so detailed descriptions are not duplicated. Native tool calling only.
 	 */
 	pruneToolDescriptions?: boolean;
 	/** Owned tool-calling dialect. Undefined keeps provider-native tool calling. */
@@ -784,7 +784,7 @@ export class Agent {
 		this.#hideThinkingSummary = value;
 	}
 
-	/** Strip tool descriptions from provider-bound specs; read per request. */
+	/** Keep concise tool summaries and strip schema descriptions; read per request. */
 	get pruneToolDescriptions(): boolean {
 		return this.#pruneToolDescriptions;
 	}

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Keep concise native tool descriptions when the full catalog is inlined, including live-summary cache invalidation.
+
 ## [18.4.4] - 2026-09-29
 
 ### Added

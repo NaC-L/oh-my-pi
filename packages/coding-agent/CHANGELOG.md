@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Read files below 300 lines verbatim by default, avoiding summary recovery reads for small source files.
+- Prefer existing targeted checks and meaningful uncovered regressions over duplicate verification projects.
+- Retain concise read/bash/edit/write descriptions with inline catalogs instead of empty native descriptions.
+- Allow omitted optional bash arguments without forced nullable fields, preserving local validation and explicit false/zero values.
+- Elide already-seen unchanged leading edit context while retaining fresh anchors, unseen context, and full TUI diffs.
+
 ## [18.4.5] - 2026-09-30
 
 ### Added

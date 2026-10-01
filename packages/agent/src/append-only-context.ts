@@ -45,6 +45,7 @@ function toolKeyForPrefix(tool: AgentTool): string {
 	return [
 		tool.name ?? "",
 		tool.description ?? "",
+		tool.summary ?? "",
 		String(tool.strict ?? ""),
 		tool.customWireName ?? "",
 		typeof tool.intent === "function" ? `fn:${objectId(tool.intent)}` : `mode:${tool.intent ?? "require"}`,
@@ -82,7 +83,7 @@ export interface StablePrefixSnapshot {
 export interface BuildOptions {
 	/** Inject the `i` intent field into tool schemas (must match agent-loop's normalizeTools). */
 	intentTracing: boolean;
-	/** Strip tool descriptions from the provider-bound specs (must match normalizeTools). */
+	/** Keep concise tool summaries and strip schema descriptions (must match normalizeTools). */
 	pruneToolDescriptions?: boolean;
 }
 
@@ -128,7 +129,7 @@ export class StablePrefix {
 	// prove the bytes are unchanged. Compared by value on the fast path.
 	#lastPromptText: string | undefined;
 	// Per-tool wire-identity snapshot: every field normalizeTools and
-	// computeFingerprint read (name, description, resolved parameters,
+	// computeFingerprint read (name, description, summary, resolved parameters,
 	// strict, customFormat, customWireName, intent mode, examples
 	// reference). A registry swap that keeps name/description/parameters
 	// but changes any of these must miss the fast path.

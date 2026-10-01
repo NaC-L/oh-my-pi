@@ -46,6 +46,7 @@ import {
 } from "../internal-urls";
 import { isMarkdownPath } from "@oh-my-pi/pi-tui/lang-from-path";
 import readDescription from "../prompts/tools/read.md" with { type: "text" };
+import readSummary from "../prompts/tools/read-summary.md" with { type: "text" };
 import type { ToolSession } from "../sdk";
 import {
 	DEFAULT_MAX_BYTES,
@@ -850,6 +851,9 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 	};
 	readonly label = "Read";
 	readonly loadMode = "essential";
+	get summary(): string {
+		return prompt.render(readSummary, { IS_HL_MODE: resolveFileDisplayMode(this.session).hashLines });
+	}
 	/** Rendered per access so the hashline guidance follows a live `edit.mode` change. */
 	get description(): string {
 		return prompt.render(readDescription, {

@@ -426,9 +426,9 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 */
 	intentTracing?: boolean;
 	/**
-	 * Strip tool descriptions (top-level + nested schema annotations) from the
+	 * Retain concise tool summaries and strip nested schema annotations from
 	 * provider-bound tool specs. Use when the full catalog is rendered into the
-	 * system prompt instead, so descriptions are not duplicated on the wire.
+	 * system prompt instead, so detailed descriptions are not duplicated.
 	 */
 	pruneToolDescriptions?: boolean;
 	/**
@@ -1115,7 +1115,7 @@ export interface AgentTool<
 	deferrable?: boolean;
 	/** How an enabled tool is presented. See {@link ToolLoadMode}. Omitted is treated as `"essential"` for built-ins; custom-tool adapters normalize omission to `"discoverable"`. */
 	loadMode?: ToolLoadMode;
-	/** Short one-line summary used for tool discovery indexes. */
+	/** Short one-line summary used for tool discovery indexes and native descriptions when the full catalog is inlined. */
 	summary?: string;
 	/**
 	 * On-demand documentation topics (`topic → markdown`), readable as

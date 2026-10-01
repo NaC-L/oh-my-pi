@@ -218,7 +218,7 @@ export const cfgReadSummarizeMinCommentLines = register({
 export const cfgReadSummarizeMinTotalLines = register({
 	id: "read.summarize.minTotalLines",
 	type: "number",
-	default: 100,
+	default: 300,
 	ui: {
 		tab: "files",
 		group: "Read Summaries",

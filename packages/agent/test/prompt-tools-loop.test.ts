@@ -4,6 +4,8 @@ import { agentLoop } from "@oh-my-pi/pi-agent-core/agent-loop";
 import type { AgentContext, AgentLoopConfig, AgentMessage, AgentTool } from "@oh-my-pi/pi-agent-core/types";
 import type { AssistantMessage, Context, Message, TextContent, ToolResultMessage } from "@oh-my-pi/pi-ai";
 import { createMockModel } from "@oh-my-pi/pi-ai/providers/mock";
+import { buildParams } from "@oh-my-pi/pi-ai/providers/openai-responses";
+import { getBundledModel } from "@oh-my-pi/pi-catalog/models";
 import { createUserMessage } from "./helpers";
 
 function identityConverter(messages: AgentMessage[]): Message[] {
@@ -102,12 +104,13 @@ describe("agentLoop with owned in-band tool calls", () => {
 		expect(wireText(internalResult!)).toBe("echoed:hello world");
 	});
 
-	it("prunes native tool descriptions from the wire when pruneToolDescriptions is set", async () => {
+	it("sends concise native descriptions without catalog details or schema annotations when pruning", async () => {
 		const toolSchema = type({ msg: type("string").describe("the message to echo") });
 		const echoTool: AgentTool<typeof toolSchema, { msg: string }> = {
 			name: "echo",
 			label: "Echo",
-			description: "Echo a message back",
+			description: "Echo a message back\n\nCatalog-only execution guidance.",
+			summary: "  Echo messages.\nLong summary detail.",
 			parameters: toolSchema,
 			async execute(_toolCallId, params) {
 				return { content: [{ type: "text", text: `echoed:${params.msg}` }], details: params };
@@ -130,12 +133,15 @@ describe("agentLoop with owned in-band tool calls", () => {
 		};
 		await agentLoop([createUserMessage("say hi")], context, config, undefined, mock.stream).result();
 
-		const wireTools = captured[0]?.tools;
-		expect(wireTools).toHaveLength(1);
-		expect(wireTools?.[0].name).toBe("echo");
-		// Native tool calling: spec ships with no description text (top-level or nested).
-		expect(wireTools?.[0].description).toBe("");
-		expect(JSON.stringify(wireTools?.[0].parameters)).not.toContain("the message to echo");
+		const model = getBundledModel<"openai-responses">("openai", "gpt-5-mini");
+		if (!model) throw new Error("Expected bundled OpenAI GPT-5 Mini model");
+		const { params } = buildParams(model, captured[0], undefined, undefined);
+		const wireTool = params.tools?.[0];
+		if (wireTool?.type !== "function") throw new Error("Expected a native provider function tool");
+		expect(wireTool.name).toBe("echo");
+		expect(wireTool.description).toBe("Echo messages.");
+		expect(JSON.stringify(wireTool)).not.toContain("Catalog-only execution guidance");
+		expect(JSON.stringify(wireTool.parameters)).not.toContain("the message to echo");
 	});
 
 	it("keeps in-band tool descriptions for owned dialects even when pruneToolDescriptions is set", async () => {

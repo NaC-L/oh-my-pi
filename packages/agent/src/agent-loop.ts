@@ -989,7 +989,7 @@ function injectIntentIntoSchema(
 export interface NormalizeToolsOptions {
 	/** Inject the `i` intent field into tool schemas (subject to `PI_NO_INTENT`). */
 	injectIntent: boolean;
-	/** Strip descriptions from the wire specs when the catalog rides in the system prompt. */
+	/** Keep concise tool summaries and strip schema descriptions when the full catalog rides in the system prompt. */
 	pruneDescriptions?: boolean;
 }
 
@@ -999,18 +999,17 @@ export function normalizeTools(tools: AgentContext["tools"], options: NormalizeT
 	return tools?.map(t => {
 		const intentMode = resolveIntentMode(t.intent);
 		const doInjectIntent = injectIntent && intentMode !== "omit";
-		// When the full catalog is rendered into the system prompt, ship the tool
-		// specs without their descriptions (top-level + nested schema annotations)
-		// so they are not duplicated on the wire. Strip the STABLE wire schema (the
-		// memoized `stripSchemaDescriptions` result is reused across requests), then
-		// re-inject `i` (without its hint, which `describeIntent: false` omits) so
-		// intent tracing keeps the field while no descriptions ride the wire.
+		// The system catalog carries full descriptions and examples. Native tools
+		// retain their discovery summary (or first nonblank description line),
+		// while nested annotations stay off the wire. Strip the stable schema
+		// before re-injecting `i` without its hint, preserving schema memo identity.
 		if (pruneDescriptions) {
 			const stripped = stripSchemaDescriptions(toolWireSchema(t));
 			const parameters = (
 				doInjectIntent ? memoizedInjectIntentIntoSchema(stripped, intentMode, false) : stripped
 			) as TSchema;
-			return { ...t, parameters, description: "" };
+			const description = (t.summary?.trim() || t.description?.trim() || "").split("\n", 1)[0]?.trimEnd() ?? "";
+			return { ...t, parameters, description };
 		}
 		const wire = toolWireSchema(t);
 		const parameters = (doInjectIntent ? memoizedInjectIntentIntoSchema(wire, intentMode, true) : wire) as TSchema;

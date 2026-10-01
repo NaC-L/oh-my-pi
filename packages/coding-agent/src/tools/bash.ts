@@ -24,6 +24,7 @@ import { InternalUrlRouter } from "../internal-urls";
 import { sessionResolveContext } from "../internal-urls/context";
 import { InternalUrlFilesystem, UrlFsError } from "../internal-urls/url-filesystem";
 import bashDescription from "../prompts/tools/bash.md" with { type: "text" };
+import bashSummary from "../prompts/tools/bash-summary.md" with { type: "text" };
 import type {
 	ClientBridgeTerminalExitStatus,
 	ClientBridgeTerminalHandle,
@@ -590,6 +591,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 	};
 	readonly label = "Bash";
 	readonly loadMode = "essential";
+	readonly summary = bashSummary.trim();
 	get description(): string {
 		const evalBackends = resolveEvalBackends(this.session);
 		const isToolActive = (name: string, fallback: boolean): boolean => this.session.isToolActive?.(name) ?? fallback;
@@ -625,7 +627,9 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 	// run alone.
 	readonly concurrency = (args: Partial<BashToolInput>): "shared" | "exclusive" =>
 		args.pty === true ? "exclusive" : "shared";
-	readonly strict = true;
+	// Strict wire schemas force every optional field into a required nullable
+	// slot. Keep omission available; the declared schema still validates calls.
+	readonly strict = false;
 
 	constructor(private readonly session: ToolSession) {}
 
