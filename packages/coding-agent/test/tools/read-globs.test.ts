@@ -220,4 +220,16 @@ describe("read tool local globs", () => {
 			path.join(tempDir, "src", "b.js"),
 		]);
 	});
+
+	it("lets a missing bracketed route path recover by suffix instead of failing as a glob", async () => {
+		const route = path.join(tempDir, "apps", "web", "app", "[slug]", "page.tsx");
+		await Bun.write(route, "export default function Page() {}\n");
+		for (const requested of ["web/app/[slug]/page.tsx", "app/[slug]/page.tsx"]) {
+			const text = getText(await tool.execute("read-route", { path: requested }));
+			expect(text).toContain(
+				`[Path '${requested}' not found; resolved to 'apps/web/app/[slug]/page.tsx' via suffix match]`,
+			);
+			expect(text).toContain("export default function Page()");
+		}
+	});
 });

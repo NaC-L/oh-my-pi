@@ -1051,26 +1051,42 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 		}
 		const parsed = parseFindPattern(expandPath(target.path));
 		const base = resolveSearchBase(parsed.basePath, this.session.cwd);
-		if ((await probeLiteralPathExists(base, this.session.cwd)) === "missing") {
-			throw new ToolError(`Glob '${target.path}' matched no files`);
-		}
+		// A missing base or zero matches is not an answer yet: `[`/`{` also appear in
+		// literal route paths (`app/[slug]/page.tsx`), so fall through to suffix and
+		// approved-plan recovery and the ordinary not-found error.
+		if ((await probeLiteralPathExists(base, this.session.cwd)) === "missing") return null;
 		const timeoutSignal = AbortSignal.timeout(READ_GLOB_TIMEOUT_MS);
 		const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-		const result = await glob({
-			pattern: parsed.globPattern,
-			path: base,
-			fileType: FileType.File,
-			hidden: true,
-			gitignore: true,
-			recursive: false,
-			signal: combinedSignal,
-			timeoutMs: READ_GLOB_TIMEOUT_MS,
-		});
+		let result: Awaited<ReturnType<typeof glob>>;
+		try {
+			result = await glob({
+				pattern: parsed.globPattern,
+				path: base,
+				fileType: FileType.File,
+				hidden: true,
+				gitignore: true,
+				recursive: false,
+				signal: combinedSignal,
+				timeoutMs: READ_GLOB_TIMEOUT_MS,
+			});
+		} catch (error) {
+			throwIfAborted(signal);
+			const nativeAbort =
+				error instanceof Error &&
+				(error.name === "AbortError" || error.name === "TimeoutError" || error.message.includes("Aborted:"));
+			if (!nativeAbort) throw error;
+			if (!timeoutSignal.aborted && !(error instanceof Error && error.message.includes("Aborted: Timeout"))) {
+				throw new ToolAbortError();
+			}
+			throw new ToolError(
+				`Glob '${target.path}' timed out after ${READ_GLOB_TIMEOUT_MS / 1000}s: the scan is incomplete, NOT proof of absence. Scope it to a deeper directory or list exact paths with ';'.`,
+			);
+		}
 		throwIfAborted(signal);
 		const matches = result.matches
 			.map(match => formatPathRelativeToCwd(resolveSearchResultPath(base, match.path), this.session.cwd))
 			.sort();
-		if (matches.length === 0) throw new ToolError(`Glob '${target.path}' matched no files`);
+		if (matches.length === 0) return null;
 		const selected = matches.slice(0, MAX_READ_GLOB_FILES);
 		const notes = [`Note: expanded ${target.path} to ${selected.length} files: ${selected.join(", ")}`];
 		if (matches.length > selected.length) {
@@ -1829,7 +1845,11 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				if (!recoveredApprovedPlan && !suffixResolution) {
 					const delimitedResult = await this.#tryReadDelimitedPaths(readPath, signal);
 					if (delimitedResult) return delimitedResult;
-					throw new ToolError(`Path '${localReadPath}' not found`);
+					throw new ToolError(
+						hasGlobPathChars(localReadPath)
+							? `Glob '${localReadPath}' matched no files`
+							: `Path '${localReadPath}' not found`,
+					);
 				}
 			} else {
 				throw error;
