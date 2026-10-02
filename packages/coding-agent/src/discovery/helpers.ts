@@ -675,9 +675,9 @@ export function calculateDepth(cwd: string, targetDir: string, separator: string
 // =============================================================================
 
 /**
- * Compare paths while tolerating Windows drive casing.
+ * Compare normalized paths while tolerating Windows casing.
  */
-function samePath(left: string, right: string): boolean {
+export function samePath(left: string, right: string): boolean {
 	const normalizedLeft = path.resolve(left);
 	const normalizedRight = path.resolve(right);
 	return process.platform === "win32"

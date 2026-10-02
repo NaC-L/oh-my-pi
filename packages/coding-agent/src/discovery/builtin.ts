@@ -32,6 +32,7 @@ import {
 	getExtensionNameFromPath,
 	loadFilesFromDir,
 	parseRequestIdFormat,
+	samePath,
 	SOURCE_PATHS,
 	scanSkillsFromDir,
 } from "./helpers";
@@ -79,7 +80,7 @@ export function getAncestorDirs(cwd: string, stopAt?: string | null): Array<{ di
 	let depth = 0;
 	while (true) {
 		ancestors.push({ dir: current, depth });
-		if (stopAt && current === stopAt) break;
+		if (stopAt && samePath(current, stopAt)) break;
 		const parent = path.dirname(current);
 		if (parent === current) break;
 		current = parent;
@@ -96,7 +97,7 @@ export function getAncestorDirs(cwd: string, stopAt?: string | null): Array<{ di
  */
 async function findNearestProjectConfigDir(ctx: LoadContext): Promise<{ dir: string; depth: number } | null> {
 	for (const ancestor of getAncestorDirs(ctx.cwd, ctx.repoRoot ?? ctx.home)) {
-		if (ancestor.dir === ctx.home) continue;
+		if (samePath(ancestor.dir, ctx.home)) continue;
 		const configDir = await ifNonEmptyDir(ancestor.dir, PATHS.projectDir);
 		if (configDir) return { dir: configDir, depth: ancestor.depth };
 	}
@@ -291,7 +292,7 @@ registerProvider<SystemPrompt>(systemPromptCapability.id, {
 async function loadSkills(ctx: LoadContext): Promise<LoadResult<Skill>> {
 	// Walk up from cwd finding .omp/skills/ in ancestors (closest first). Home is
 	// the user config root, never a project (see findNearestProjectConfigDir).
-	const ancestors = getAncestorDirs(ctx.cwd, ctx.repoRoot ?? ctx.home).filter(({ dir }) => dir !== ctx.home);
+	const ancestors = getAncestorDirs(ctx.cwd, ctx.repoRoot ?? ctx.home).filter(({ dir }) => !samePath(dir, ctx.home));
 	const projectScans = ancestors.map(({ dir }) =>
 		scanSkillsFromDir(ctx, {
 			dir: path.join(dir, PATHS.projectDir, "skills"),
