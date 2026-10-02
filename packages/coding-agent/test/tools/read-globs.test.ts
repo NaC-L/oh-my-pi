@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -210,6 +210,87 @@ describe("read tool local globs", () => {
 		expect(getText(result)).toContain(getText(plainB));
 		expect(getText(result)).not.toContain("a6");
 		expect(getText(result)).not.toContain("b6");
+	});
+
+	it.each(["1,10", "1-2,10-11", "raw:1-2,10-11", "1-2,10-11:raw"])(
+		"preserves comma-separated selectors on each glob match: %s",
+		async selector => {
+			for (const name of ["a", "b"]) {
+				await Bun.write(
+					path.join(tempDir, "src", `${name}.txt`),
+					Array.from({ length: 15 }, (_, index) => `${name} selected line ${index + 1}`).join("\n"),
+				);
+			}
+			const globPath = selector === "1,10" && process.platform === "win32" ? "src\\*.txt" : "src/*.txt";
+			const result = await tool.execute("read-multirange-glob", { path: `${globPath}:${selector}` });
+			for (const name of ["a", "b"]) {
+				const direct = await tool.execute(`read-${name}-multirange`, { path: `src/${name}.txt:${selector}` });
+				expect(getText(result)).toContain(getText(direct));
+				expect(getText(result)).not.toContain(`${name} selected line 6`);
+			}
+			expect(getText(result)).not.toContain("Could not read");
+			expect(result.details?.displayReadTargets).toEqual([`src/a.txt:${selector}`, `src/b.txt:${selector}`]);
+		},
+	);
+
+	it("preserves comma selectors in a semicolon list of globs", async () => {
+		await fs.mkdir(path.join(tempDir, "other"));
+		for (const directory of ["src", "other"]) {
+			await Bun.write(
+				path.join(tempDir, directory, "fixture.txt"),
+				Array.from({ length: 15 }, (_, index) => `${directory} selected line ${index + 1}`).join("\n"),
+			);
+		}
+		const result = await tool.execute("read-mixed-multirange", { path: "src/*.txt:1,10;other/*.txt:2,9" });
+		for (const [directory, selector] of [
+			["src", "1,10"],
+			["other", "2,9"],
+		]) {
+			const direct = await tool.execute("read-direct-multirange", { path: `${directory}/fixture.txt:${selector}` });
+			expect(getText(result)).toContain(getText(direct));
+			expect(getText(result)).not.toContain(`${directory} selected line 6`);
+		}
+		expect(getText(result)).not.toContain("Could not read");
+		expect(result.details?.displayReadTargets).toEqual(["src/fixture.txt:1,10", "other/fixture.txt:2,9"]);
+	});
+
+	it("reads www-prefixed glob matches as local files with fetch disabled", async () => {
+		await Bun.write(path.join(tempDir, "www.fixture.txt"), "local www fixture\n");
+		tool = new ReadTool({ ...session, settings: Settings.isolated({ "fetch.enabled": false }) });
+		const fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Local glob reads must not fetch"));
+		try {
+			const direct = await tool.execute("read-local-www", { path: "./www.fixture.txt" });
+			for (const target of ["*.txt", "*.txt:1-1"]) {
+				const result = await tool.execute("read-glob-www", { path: target });
+				expect(getText(result)).toContain(getText(direct));
+				expect(getText(result)).not.toContain("Could not read");
+				expect(getText(result)).not.toContain("URL reads are disabled");
+				expect(result.details?.displayReadTargets).toEqual([
+					target.includes(":") ? "www.fixture.txt:1-1" : "www.fixture.txt",
+				]);
+				expect(result.details?.displayReadTargetLinks).toEqual([path.join(tempDir, "www.fixture.txt")]);
+			}
+			expect(fetchSpy).not.toHaveBeenCalled();
+		} finally {
+			fetchSpy.mockRestore();
+		}
+	});
+
+	it("preserves comma selectors on glob paths containing spaces", async () => {
+		await fs.mkdir(path.join(tempDir, "folder with spaces"));
+		await Bun.write(path.join(tempDir, "folder with spaces", "fixture.txt"), "first\nsecond\nthird\n");
+		const result = await tool.execute("read-spaced-glob", { path: "folder with spaces/*.txt:raw:1,3" });
+		expect(getText(result)).toContain("first\n\n…\n\nthird");
+		expect(getText(result)).not.toContain("second");
+		expect(getText(result)).not.toContain("Could not read");
+	});
+
+	it("keeps semicolon and glob-character literal names ahead of comma selectors", async () => {
+		await Bun.write(path.join(tempDir, "src", "a;b[1].txt"), "first\nsecond\nthird\n");
+		const result = await tool.execute("read-delimited-literal", { path: "src/a;b[1].txt:raw:1,3" });
+		expect(getText(result)).toBe("first\n\n…\n\nthird");
+		expect(getText(result)).not.toContain("Note: expanded");
+		expect(getText(result)).not.toContain("interpreted as");
 	});
 
 	it("supports absolute glob paths", async () => {

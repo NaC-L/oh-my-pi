@@ -1095,13 +1095,14 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 			);
 		}
 		const selectedParts = selected.map(match => (target.sel === undefined ? match : `${match}:${target.sel}`));
-		return this.#readDelimitedParts(selectedParts, signal, notes);
+		return this.#readDelimitedParts(selectedParts, signal, notes, true);
 	}
 
 	async #readDelimitedParts(
 		parts: string[],
 		signal?: AbortSignal,
 		notes: string[] = [`Note: interpreted as ${parts.length} paths: ${parts.join(", ")}`],
+		localPaths = false,
 	): Promise<AgentToolResult<ReadToolDetails>> {
 		const content: Array<TextContent | ImageContent> = [];
 		const displayReadTargets: string[] = [];
@@ -1118,7 +1119,9 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 
 		for (const part of parts) {
 			try {
-				const result = await this.execute("read-delimited-part", { path: part }, signal);
+				// Glob matches are filesystem targets even when their names look like URLs.
+				const readPath = localPaths ? path.resolve(this.session.cwd, part) : part;
+				const result = await this.execute("read-delimited-part", { path: readPath }, signal);
 				if (result.details?.notes) notes.push(...result.details.notes);
 				const nestedTargets = result.details?.displayReadTargets;
 				if (nestedTargets?.length) {
